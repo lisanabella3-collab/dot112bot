@@ -1,0 +1,51 @@
+# @dot112bot
+
+A Telegram bot that converts images between formats (JPG/PNG/WebP) and shortens URLs.
+
+## Features
+- 🖼️ Image conversion — send a photo, pick a format, get it back converted
+- 🔗 URL shortening — `/shorten <url>` (powered by TinyURL, no API key needed)
+
+## 1. Create the bot on Telegram
+1. Open Telegram, search **@BotFather**
+2. Send `/newbot`
+3. Name it, then set the username to `dot112bot`
+4. Copy the **token** BotFather gives you — you'll need it below
+
+## 2. Push this project to GitHub
+```bash
+cd dot112bot
+git init
+git add .
+git commit -m "Initial commit — dot112bot"
+git branch -M main
+git remote add origin https://github.com/<your-username>/dot112bot.git
+git push -u origin main
+```
+
+## 3. Deploy on Railway
+1. Go to https://railway.app and sign in with GitHub
+2. Click **New Project → Deploy from GitHub repo**
+3. Select your `dot112bot` repo
+4. In the Railway project, go to **Variables** and add:
+   - `BOT_TOKEN` = the token you got from BotFather
+5. Railway will auto-detect Node.js, run `npm install`, then `npm start`
+6. Once deployed, check the **Deployments → Logs** tab — you should see:
+   ```
+   🤖 dot112bot is running...
+   ```
+
+That's it — message your bot on Telegram and it'll respond.
+
+## Local testing (optional, before deploying)
+```bash
+npm install
+cp .env.example .env
+# paste your token into .env
+node -r dotenv/config index.js
+```
+(If testing locally, also run `npm install dotenv --save-dev`.)
+
+## Notes
+- Railway keeps the bot running continuously (long-polling) — no server management needed.
+- To add AI image generation later, you'd integrate an API like OpenAI's image endpoint and add a new command/handler — happy to help wire that in when you're ready.
