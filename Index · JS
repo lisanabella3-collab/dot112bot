@@ -1,0 +1,124 @@
+// @dot112bot — Image Converter + URL Shortener Telegram Bot
+// Stack: Node.js + Telegraf, deployed on Railway
+
+const { Telegraf } = require('telegraf');
+const sharp = require('sharp');
+const axios = require('axios');
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+
+if (!BOT_TOKEN) {
+  console.error('Missing BOT_TOKEN environment variable. Set it in Railway → Variables.');
+  process.exit(1);
+}
+
+const bot = new Telegraf(BOT_TOKEN);
+
+// In-memory store: tracks which image (file_id) a user just sent,
+// so we know what to convert once they pick a format.
+const pendingImages = new Map();
+
+// ---------- /start ----------
+bot.start((ctx) => {
+  ctx.reply(
+    `👋 Welcome to @dot112bot!\n\n` +
+    `Here's what I can do:\n\n` +
+    `🖼️ *Image Converter*\n` +
+    `Just send me any photo/image and I'll ask what format to convert it to (JPG, PNG, WebP).\n\n` +
+    `🔗 *URL Shortener*\n` +
+    `Use /shorten <your long url>\n` +
+    `Example: /shorten https://example.com/a/very/long/link\n\n` +
+    `Type /help anytime to see this again.`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.help((ctx) => ctx.reply('Send an image to convert it, or use /shorten <url> to shorten a link.'));
+
+// ---------- URL Shortener ----------
+bot.command('shorten', async (ctx) => {
+  const parts = ctx.message.text.split(' ').filter(Boolean);
+  const url = parts[1];
+
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return ctx.reply('⚠️ Usage: /shorten <valid url starting with http:// or https://>');
+  }
+
+  try {
+    // Using TinyURL's free API — no key required
+    const res = await axios.get('https://tinyurl.com/api-create.php', {
+      params: { url },
+    });
+    ctx.reply(`✅ Shortened link:\n${res.data}`);
+  } catch (err) {
+    console.error('Shorten error:', err.message);
+    ctx.reply('❌ Something went wrong shortening that URL. Please try again.');
+  }
+});
+
+// ---------- Image Converter ----------
+// Step 1: user sends a photo/document image
+bot.on(['photo', 'document'], async (ctx) => {
+  let fileId;
+
+  if (ctx.message.photo) {
+    // Telegram sends multiple resolutions — grab the largest
+    fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+  } else if (ctx.message.document && ctx.message.document.mime_type?.startsWith('image/')) {
+    fileId = ctx.message.document.file_id;
+  } else {
+    return; // not an image
+  }
+
+  pendingImages.set(ctx.from.id, fileId);
+
+  await ctx.reply('What format do you want to convert it to?', {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: 'JPG', callback_data: 'fmt_jpeg' },
+          { text: 'PNG', callback_data: 'fmt_png' },
+          { text: 'WebP', callback_data: 'fmt_webp' },
+        ],
+      ],
+    },
+  });
+});
+
+// Step 2: user taps a format button
+bot.action(/fmt_(jpeg|png|webp)/, async (ctx) => {
+  const format = ctx.match[1];
+  const userId = ctx.from.id;
+  const fileId = pendingImages.get(userId);
+
+  if (!fileId) {
+    return ctx.answerCbQuery('Please send an image first.');
+  }
+
+  try {
+    await ctx.answerCbQuery(`Converting to ${format.toUpperCase()}...`);
+
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    const response = await axios.get(fileLink.href, { responseType: 'arraybuffer' });
+
+    const converted = await sharp(response.data).toFormat(format).toBuffer();
+
+    await ctx.replyWithDocument({
+      source: converted,
+      filename: `converted.${format === 'jpeg' ? 'jpg' : format}`,
+    });
+
+    pendingImages.delete(userId);
+  } catch (err) {
+    console.error('Conversion error:', err.message);
+    ctx.reply('❌ Failed to convert that image. Please try again.');
+  }
+});
+
+// ---------- Launch ----------
+bot.launch();
+console.log('🤖 dot112bot is running...');
+
+// Graceful shutdown (Railway sends SIGTERM on redeploy)
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
